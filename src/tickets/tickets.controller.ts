@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { CurrentUserPayload } from '../auth/decorators/current-user.decorator';
+import { ScanRateLimitGuard } from '../common/guards/scan-rate-limit.guard';
 import { TicketsService } from './tickets.service';
 import { IssueTicketDto } from './dto/issue-ticket.dto';
 import { ConfirmIssueTicketDto } from './dto/confirm-issue-ticket.dto';
@@ -29,11 +30,25 @@ export class TicketsController {
   }
 
   @Get('verify/:qrSecret')
+  @UseGuards(ScanRateLimitGuard)
   verify(
     @CurrentUser() user: CurrentUserPayload,
     @Param('qrSecret') qrSecret: string,
   ) {
     return this.ticketsService.verify(user.userId, qrSecret);
+  }
+
+  @Get('offline-public-keys')
+  getOfflinePublicKeys() {
+    return this.ticketsService.getOfflinePublicKeys();
+  }
+
+  @Get(':ticketId/offline-token')
+  getOfflineToken(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('ticketId') ticketId: string,
+  ) {
+    return this.ticketsService.getOfflineToken(user.userId, ticketId);
   }
 
   @Post('issue')

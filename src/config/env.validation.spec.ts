@@ -12,6 +12,11 @@ function validConfig(overrides: Record<string, unknown> = {}) {
     STELLAR_NETWORK: 'testnet',
     TICKETING_CONTRACT_ID: 'C'.repeat(56),
     PLATFORM_SIGNER_SECRET: 'S'.repeat(56),
+    OFFLINE_SIGNING_KEY_ID: '2026-01',
+    OFFLINE_SIGNING_PRIVATE_KEY:
+      '-----BEGIN PRIVATE KEY-----\nfake\n-----END PRIVATE KEY-----\n',
+    OFFLINE_SIGNING_PUBLIC_KEYS:
+      '{"2026-01":"-----BEGIN PUBLIC KEY-----\\nfake\\n-----END PUBLIC KEY-----\\n"}',
     ...overrides,
   };
 }
