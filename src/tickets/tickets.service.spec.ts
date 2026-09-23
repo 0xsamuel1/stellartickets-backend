@@ -14,6 +14,7 @@ import { TicketsService } from './tickets.service';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { OrganizationsService } from '../organizations/organizations.service';
 import type { StellarService } from '../stellar/stellar.service';
+import type { OfflineTokenService } from './offline-token.service';
 
 function buildTicketType(overrides: Partial<Record<string, unknown>> = {}) {
   return {
@@ -52,6 +53,7 @@ describe('TicketsService', () => {
   };
   let organizations: { assertMember: jest.Mock };
   let stellar: Record<string, jest.Mock>;
+  let offlineTokens: { sign: jest.Mock; getPublicKeys: jest.Mock };
 
   beforeEach(() => {
     prisma = {
@@ -85,11 +87,26 @@ describe('TicketsService', () => {
         .mockResolvedValue({ result: 7n, txHash: '0xabc' }),
       verifyTicket: jest.fn(),
     };
+    offlineTokens = {
+      sign: jest.fn().mockReturnValue({
+        payload: {
+          ticketId: 'ticket-1',
+          chainTicketId: '7',
+          eventId: 'event-1',
+          status: 'VALID',
+          exp: 9_999_999_999,
+        },
+        kid: 'test-key',
+        signature: 'sig',
+      }),
+      getPublicKeys: jest.fn().mockReturnValue({ 'test-key': 'pem' }),
+    };
 
     service = new TicketsService(
       prisma as unknown as PrismaService,
       organizations as unknown as OrganizationsService,
       stellar as unknown as StellarService,
+      offlineTokens as unknown as OfflineTokenService,
     );
   });
 
@@ -262,6 +279,67 @@ describe('TicketsService', () => {
       await expect(
         service.verify('staff-1', 'unknown-secret'),
       ).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe('getOfflineToken', () => {
+    it('signs a payload built from the ticket for an authorized staff member', async () => {
+      prisma.ticket.findUnique.mockResolvedValue({
+        id: 'ticket-1',
+        eventId: 'event-1',
+        chainTicketId: 7n,
+        status: 'VALID',
+        event: { organizationId: 'org-1', organization: {} },
+      });
+
+      const token = await service.getOfflineToken('staff-1', 'ticket-1');
+
+      expect(organizations.assertMember).toHaveBeenCalledWith(
+        'org-1',
+        'staff-1',
+      );
+      expect(offlineTokens.sign).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ticketId: 'ticket-1',
+          chainTicketId: '7',
+          eventId: 'event-1',
+          status: 'VALID',
+        }),
+      );
+      expect(token.kid).toBe('test-key');
+    });
+
+    it('throws when the ticket does not exist', async () => {
+      prisma.ticket.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.getOfflineToken('staff-1', 'missing-ticket'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(offlineTokens.sign).not.toHaveBeenCalled();
+    });
+
+    it('rejects a caller who is not a member of the owning organization', async () => {
+      prisma.ticket.findUnique.mockResolvedValue({
+        id: 'ticket-1',
+        eventId: 'event-1',
+        chainTicketId: 7n,
+        status: 'VALID',
+        event: { organizationId: 'org-1', organization: {} },
+      });
+      organizations.assertMember.mockRejectedValueOnce(
+        new ForbiddenException('You are not a member of this organization'),
+      );
+
+      await expect(
+        service.getOfflineToken('outsider-1', 'ticket-1'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(offlineTokens.sign).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getOfflinePublicKeys', () => {
+    it('returns the offline token service public keys', () => {
+      expect(service.getOfflinePublicKeys()).toEqual({ 'test-key': 'pem' });
     });
   });
 

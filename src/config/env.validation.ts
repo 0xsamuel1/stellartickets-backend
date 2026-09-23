@@ -39,6 +39,22 @@ class EnvironmentVariables {
   /// backend itself (e.g. relaying an organizer's already-authorized op).
   @IsString()
   PLATFORM_SIGNER_SECRET: string;
+
+  /// Key id of the Ed25519 key currently used to sign offline verification
+  /// tokens. Must have a matching entry in OFFLINE_SIGNING_PUBLIC_KEYS.
+  @IsString()
+  OFFLINE_SIGNING_KEY_ID: string;
+
+  /// PEM-encoded Ed25519 private key used to sign offline verification
+  /// tokens. See docs/OFFLINE_VERIFICATION.md for generation and rotation.
+  @IsString()
+  OFFLINE_SIGNING_PRIVATE_KEY: string;
+
+  /// JSON map of key id -> PEM-encoded Ed25519 public key. Every key a
+  /// scanner should still accept, current and retired, so tokens signed
+  /// before a rotation keep verifying until they expire.
+  @IsString()
+  OFFLINE_SIGNING_PUBLIC_KEYS: string;
 }
 
 export function validate(config: Record<string, unknown>) {

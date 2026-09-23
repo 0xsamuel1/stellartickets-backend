@@ -4,10 +4,12 @@ import { StellarModule } from '../stellar/stellar.module';
 import { TicketsController } from './tickets.controller';
 import { TicketsService } from './tickets.service';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { OfflineTokenService } from './offline-token.service';
+import { ScanRateLimitGuard } from '../common/guards/scan-rate-limit.guard';
 
 @Module({
   imports: [OrganizationsModule, StellarModule, NotificationsModule],
   controllers: [TicketsController],
-  providers: [TicketsService],
+  providers: [TicketsService, OfflineTokenService, ScanRateLimitGuard],
 })
 export class TicketsModule {}
