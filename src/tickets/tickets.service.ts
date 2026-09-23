@@ -8,6 +8,10 @@ import { ResaleListingStatus, TicketStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { StellarService } from '../stellar/stellar.service';
+import { OfflineTokenService } from './offline-token.service';
+
+/** How long an offline-verifiable token stays valid before a scanner must re-verify online. */
+const OFFLINE_TOKEN_TTL_SECONDS = 12 * 60 * 60;
 
 @Injectable()
 export class TicketsService {
@@ -15,6 +19,7 @@ export class TicketsService {
     private readonly prisma: PrismaService,
     private readonly organizations: OrganizationsService,
     private readonly stellar: StellarService,
+    private readonly offlineTokens: OfflineTokenService,
   ) {}
 
   // ---- Organizer-authorized issuance (off-chain payment already settled) ----
@@ -194,6 +199,25 @@ export class TicketsService {
       status: reconciledStatus,
       onChainOwner: onChain.owner,
     };
+  }
+
+  // ---- Offline gate verification (see docs/OFFLINE_VERIFICATION.md) ----
+
+  getOfflinePublicKeys() {
+    return this.offlineTokens.getPublicKeys();
+  }
+
+  async getOfflineToken(userId: string, ticketId: string) {
+    const ticket = await this.getTicketWithOrg(ticketId);
+    await this.organizations.assertMember(ticket.event.organizationId, userId);
+
+    return this.offlineTokens.sign({
+      ticketId: ticket.id,
+      chainTicketId: ticket.chainTicketId.toString(),
+      eventId: ticket.eventId,
+      status: ticket.status,
+      exp: Math.floor(Date.now() / 1000) + OFFLINE_TOKEN_TTL_SECONDS,
+    });
   }
 
   // ---- Check-in ----
