@@ -36,8 +36,14 @@ export class EventsController {
 
   @Get('events/:eventId')
   @UseInterceptors(ResponseCacheInterceptor)
-  findOne(@Param('eventId') eventId: string) {
-    return this.eventsService.getWithOrg(eventId);
+  findOne(
+    @Param('eventId') eventId: string,
+    @Query('reconcile') reconcile?: string,
+  ) {
+    return this.eventsService.getWithReconciliation(
+      eventId,
+      reconcile === 'true',
+    );
   }
 
   @Get('organizations/:organizationId/events')

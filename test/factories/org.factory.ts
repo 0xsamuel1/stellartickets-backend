@@ -15,6 +15,8 @@ export function createOrganization(
     stellarAccount: 'G'.repeat(56),
     logoUrl: null,
     websiteUrl: null,
+    defaultMaxResaleMultiplierBps: 11_000,
+    defaultRoyaltyBps: 500,
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
     updatedAt: new Date('2026-01-01T00:00:00.000Z'),
     // #207 — soft-delete marker (null = live).

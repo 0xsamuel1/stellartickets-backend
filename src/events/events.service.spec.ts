@@ -18,13 +18,14 @@ describe('EventsService', () => {
       create: jest.Mock;
       update: jest.Mock;
       findUnique: jest.Mock;
+      findUniqueOrThrow: jest.Mock;
       findMany: jest.Mock;
       count: jest.Mock;
     };
     ticket: { count: jest.Mock };
-    ticketType: { count: jest.Mock };
+    ticketType: { count: jest.Mock; createMany: jest.Mock };
   };
-  let organizations: { assertMember: jest.Mock };
+  let organizations: { assertMember: jest.Mock; findOne: jest.Mock };
   let stellar: {
     buildCreateEventTx: jest.Mock;
     submitSignedTransaction: jest.Mock;
@@ -34,20 +35,35 @@ describe('EventsService', () => {
 
   beforeEach(() => {
     prisma = {
-      $transaction: jest.fn((operations: Promise<unknown>[]) =>
-        Promise.all(operations),
+      // events.service.ts uses both the array form (`findPublished`) and the
+      // interactive-callback form (`create`) of `$transaction`.
+      $transaction: jest.fn((arg: unknown) =>
+        Array.isArray(arg)
+          ? Promise.all(arg)
+          : (arg as (tx: unknown) => unknown)(prisma),
       ),
       event: {
         create: jest.fn(),
         update: jest.fn(),
         findUnique: jest.fn(),
+        findUniqueOrThrow: jest.fn(),
         findMany: jest.fn(),
         count: jest.fn().mockResolvedValue(0),
       },
       ticket: { count: jest.fn() },
-      ticketType: { count: jest.fn().mockResolvedValue(1) },
+      ticketType: {
+        count: jest.fn().mockResolvedValue(1),
+        createMany: jest.fn(),
+      },
     };
-    organizations = { assertMember: jest.fn().mockResolvedValue(undefined) };
+    organizations = {
+      assertMember: jest.fn().mockResolvedValue(undefined),
+      findOne: jest.fn().mockResolvedValue({
+        id: 'org-1',
+        defaultMaxResaleMultiplierBps: 11_000,
+        defaultRoyaltyBps: 500,
+      }),
+    };
     stellar = {
       buildCreateEventTx: jest.fn().mockResolvedValue('unsigned-xdr'),
       submitSignedTransaction: jest
@@ -56,6 +72,11 @@ describe('EventsService', () => {
       getEvent: jest.fn().mockResolvedValue({
         eventId: 99n,
         organizer: 'GORG',
+        name: 'Radiohead Live',
+        category: 'CONCERTS',
+        maxResaleMultiplierBps: 11_000,
+        royaltyBps: 500,
+        ticketsIssued: 0n,
       }),
     };
     cache = { delete: jest.fn().mockResolvedValue(undefined) };
@@ -67,6 +88,113 @@ describe('EventsService', () => {
       undefined,
       cache,
     );
+  });
+
+  describe('create', () => {
+    it('falls back to the organization defaults when the DTO omits resale terms', async () => {
+      prisma.event.create.mockResolvedValue({ id: 'event-1' });
+      prisma.event.findUniqueOrThrow.mockResolvedValue({
+        id: 'event-1',
+        ticketTypes: [],
+      });
+
+      await service.create('organizer-1', 'org-1', {
+        name: 'Radiohead Live',
+        category: 'CONCERTS',
+        venue: 'O2 Arena',
+        startsAt: new Date(),
+      } as never);
+
+      expect(prisma.event.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            maxResaleMultiplierBps: 11_000,
+            royaltyBps: 500,
+          }),
+        }),
+      );
+      expect(prisma.ticketType.createMany).not.toHaveBeenCalled();
+    });
+
+    it('prefers resale terms given on the DTO over the organization defaults', async () => {
+      organizations.findOne.mockResolvedValue({
+        id: 'org-1',
+        defaultMaxResaleMultiplierBps: 15_000,
+        defaultRoyaltyBps: 1_000,
+      });
+      prisma.event.create.mockResolvedValue({ id: 'event-1' });
+      prisma.event.findUniqueOrThrow.mockResolvedValue({
+        id: 'event-1',
+        ticketTypes: [],
+      });
+
+      await service.create('organizer-1', 'org-1', {
+        name: 'Radiohead Live',
+        category: 'CONCERTS',
+        venue: 'O2 Arena',
+        startsAt: new Date(),
+        maxResaleMultiplierBps: 12_000,
+        royaltyBps: 500,
+      } as never);
+
+      expect(prisma.event.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            maxResaleMultiplierBps: 12_000,
+            royaltyBps: 500,
+          }),
+        }),
+      );
+    });
+
+    it('creates the first ticket type in the same transaction as the event', async () => {
+      prisma.event.create.mockResolvedValue({ id: 'event-1' });
+      prisma.event.findUniqueOrThrow.mockResolvedValue({
+        id: 'event-1',
+        ticketTypes: [{ id: 'tt-1', name: 'General' }],
+      });
+
+      await service.create('organizer-1', 'org-1', {
+        name: 'Radiohead Live',
+        category: 'CONCERTS',
+        venue: 'O2 Arena',
+        startsAt: new Date(),
+        ticketTypes: [
+          { name: 'General', price: '1000', quantityTotal: 100 },
+        ],
+      } as never);
+
+      expect(prisma.$transaction).toHaveBeenCalled();
+      expect(prisma.ticketType.createMany).toHaveBeenCalledWith({
+        data: [
+          {
+            eventId: 'event-1',
+            name: 'General',
+            price: 1000n,
+            quantityTotal: 100,
+          },
+        ],
+      });
+    });
+
+    it('rolls back the event when the ticket type fails to create', async () => {
+      prisma.event.create.mockResolvedValue({ id: 'event-1' });
+      prisma.ticketType.createMany.mockRejectedValue(
+        new Error('duplicate ticket type name'),
+      );
+
+      await expect(
+        service.create('organizer-1', 'org-1', {
+          name: 'Radiohead Live',
+          category: 'CONCERTS',
+          venue: 'O2 Arena',
+          startsAt: new Date(),
+          ticketTypes: [
+            { name: 'General', price: '1000', quantityTotal: 100 },
+          ],
+        } as never),
+      ).rejects.toThrow('duplicate ticket type name');
+    });
   });
 
   describe('buildPublishTx', () => {
@@ -200,7 +328,7 @@ describe('EventsService', () => {
       expect(prisma.event.update).not.toHaveBeenCalled();
     });
 
-    it('submits the signed transaction and marks the event published', async () => {
+    it('submits the signed transaction, confirms it on-chain, and marks the event published', async () => {
       prisma.event.findUnique.mockResolvedValue({
         ...createEvent({
           id: 'event-1',
@@ -228,6 +356,79 @@ describe('EventsService', () => {
         data: { status: 'PUBLISHED', publishedTxHash: '0xabc' },
       });
       expect(event.status).toBe('PUBLISHED');
+    });
+
+    it('fails the request when the on-chain event cannot be confirmed after submission', async () => {
+      prisma.event.findUnique.mockResolvedValue({
+        id: 'event-1',
+        organizationId: 'org-1',
+        chainEventId: 99n,
+        organization: { stellarAccount: 'GORG' },
+      });
+      stellar.getEvent.mockRejectedValue(new Error('not found'));
+
+      await expect(
+        service.confirmPublish('organizer-1', 'event-1', 'signed-xdr'),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.event.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getWithReconciliation', () => {
+    it('skips the chain lookup when reconciliation is not requested', async () => {
+      prisma.event.findUnique.mockResolvedValue({
+        id: 'event-1',
+        status: 'PUBLISHED',
+        chainEventId: 99n,
+        organization: { stellarAccount: 'GORG' },
+      });
+
+      const event = await service.getWithReconciliation('event-1', false);
+
+      expect(stellar.getEvent).not.toHaveBeenCalled();
+      expect(event).not.toHaveProperty('onChainStatus');
+    });
+
+    it('reports PUBLISHED when the chain agrees with the cached status', async () => {
+      prisma.event.findUnique.mockResolvedValue({
+        id: 'event-1',
+        status: 'PUBLISHED',
+        chainEventId: 99n,
+        organization: { stellarAccount: 'GORG' },
+      });
+
+      const event = await service.getWithReconciliation('event-1', true);
+
+      expect(stellar.getEvent).toHaveBeenCalledWith(99n);
+      expect(event.onChainStatus).toBe('PUBLISHED');
+    });
+
+    it('reports NOT_FOUND when the DB says published but the chain lookup fails', async () => {
+      prisma.event.findUnique.mockResolvedValue({
+        id: 'event-1',
+        status: 'PUBLISHED',
+        chainEventId: 99n,
+        organization: { stellarAccount: 'GORG' },
+      });
+      stellar.getEvent.mockRejectedValue(new Error('not found'));
+
+      const event = await service.getWithReconciliation('event-1', true);
+
+      expect(event.onChainStatus).toBe('NOT_FOUND');
+    });
+
+    it('reports NOT_PUBLISHED without a chain lookup when no chain id was reserved', async () => {
+      prisma.event.findUnique.mockResolvedValue({
+        id: 'event-1',
+        status: 'DRAFT',
+        chainEventId: null,
+        organization: { stellarAccount: 'GORG' },
+      });
+
+      const event = await service.getWithReconciliation('event-1', true);
+
+      expect(stellar.getEvent).not.toHaveBeenCalled();
+      expect(event.onChainStatus).toBe('NOT_PUBLISHED');
     });
   });
 

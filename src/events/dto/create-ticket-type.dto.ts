@@ -38,3 +38,6 @@ export class CreateTicketTypeDto {
   @IsOptional()
   isHidden?: boolean;
 }
+
+/** Same shape as `CreateTicketTypeDto`, nested under `CreateEventDto.ticketTypes` (no `eventId` — the parent event doesn't exist yet). */
+export class CreateEventTicketTypeDto extends CreateTicketTypeDto {}

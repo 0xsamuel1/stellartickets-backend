@@ -21,6 +21,9 @@ import { CreateTicketTypeDto } from './dto/create-ticket-type.dto';
 import { CACHE_STORE } from '../common/cache/cache-store';
 import { Inject } from '@nestjs/common';
 
+/** On-chain existence derived from `StellarService.getEvent`, reported alongside the cached DB `status` when reconciliation is requested. */
+export type OnChainReconciliationStatus = 'PUBLISHED' | 'NOT_FOUND' | 'NOT_PUBLISHED';
+
 @Injectable()
 export class EventsService {
   constructor(
@@ -35,17 +38,38 @@ export class EventsService {
 
   async create(userId: string, organizationId: string, dto: CreateEventDto) {
     await this.organizations.assertMember(organizationId, userId);
-    const event = await this.prisma.event.create({
-      data: {
-        organizationId,
-        name: dto.name,
-        category: dto.category,
-        venue: dto.venue,
-        startsAt: dto.startsAt,
-        endsAt: dto.endsAt,
-        maxResaleMultiplierBps: dto.maxResaleMultiplierBps ?? 11_000,
-        royaltyBps: dto.royaltyBps ?? 500,
-      },
+    const org = await this.organizations.findOne(organizationId);
+
+    const event = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.event.create({
+        data: {
+          organizationId,
+          name: dto.name,
+          category: dto.category,
+          venue: dto.venue,
+          startsAt: dto.startsAt,
+          endsAt: dto.endsAt,
+          maxResaleMultiplierBps:
+            dto.maxResaleMultiplierBps ?? org.defaultMaxResaleMultiplierBps,
+          royaltyBps: dto.royaltyBps ?? org.defaultRoyaltyBps,
+        },
+      });
+
+      if (dto.ticketTypes?.length) {
+        await tx.ticketType.createMany({
+          data: dto.ticketTypes.map((ticketType) => ({
+            eventId: created.id,
+            name: ticketType.name,
+            price: BigInt(ticketType.price),
+            quantityTotal: ticketType.quantityTotal,
+          })),
+        });
+      }
+
+      return tx.event.findUniqueOrThrow({
+        where: { id: created.id },
+        include: { ticketTypes: true },
+      });
     });
     // #209 — audit event creation.
     await this.audit?.record(userId, 'event.create', 'Event', event.id, {
@@ -129,7 +153,14 @@ export class EventsService {
 
     const { txHash } = await this.stellar.submitSignedTransaction(signedXdr);
 
-    const onChainEvent = await this.stellar.getEvent(event.chainEventId);
+    let onChainEvent: Awaited<ReturnType<StellarService['getEvent']>>;
+    try {
+      onChainEvent = await this.stellar.getEvent(event.chainEventId);
+    } catch {
+      throw new BadRequestException(
+        'Submission succeeded but the on-chain event could not be confirmed',
+      );
+    }
     if (
       onChainEvent.eventId !== event.chainEventId ||
       onChainEvent.organizer !== event.organization.stellarAccount
@@ -182,6 +213,29 @@ export class EventsService {
       throw new NotFoundException('Event not found');
     }
     return event;
+  }
+
+  /** Looks up the event, optionally reconciling its cached DB `status` against the chain. */
+  async getWithReconciliation(eventId: string, reconcile: boolean) {
+    const event = await this.getWithOrg(eventId);
+    if (!reconcile) {
+      return event;
+    }
+    return { ...event, onChainStatus: await this.getOnChainStatus(event) };
+  }
+
+  private async getOnChainStatus(event: {
+    chainEventId: bigint | null;
+  }): Promise<OnChainReconciliationStatus> {
+    if (event.chainEventId === null) {
+      return 'NOT_PUBLISHED';
+    }
+    try {
+      await this.stellar.getEvent(event.chainEventId);
+      return 'PUBLISHED';
+    } catch {
+      return 'NOT_FOUND';
+    }
   }
 
   /** One page of published events plus the total count, for `GET /events`. */

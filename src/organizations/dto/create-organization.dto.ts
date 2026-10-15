@@ -1,11 +1,14 @@
 import { Transform } from 'class-transformer';
 import {
   IsEnum,
+  IsInt,
   IsOptional,
   IsString,
   IsUrl,
   Matches,
+  Max,
   MaxLength,
+  Min,
   MinLength,
 } from 'class-validator';
 import { Industry } from '@prisma/client';
@@ -39,4 +42,18 @@ export class CreateOrganizationDto {
   @IsOptional()
   @IsUrl({ require_protocol: true })
   websiteUrl?: string;
+
+  /** Default basis-point resale cap applied to this org's events when their DTO omits it. */
+  @IsOptional()
+  @IsInt()
+  @Min(10_000)
+  @Max(50_000)
+  defaultMaxResaleMultiplierBps?: number;
+
+  /** Default basis-point resale royalty applied to this org's events when their DTO omits it. */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(2_000)
+  defaultRoyaltyBps?: number;
 }
