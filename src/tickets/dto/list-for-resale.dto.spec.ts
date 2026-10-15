@@ -19,4 +19,16 @@ describe('ListForResaleDto', () => {
     const errors = await validate(dto);
     expect(errors.some((e) => e.property === 'price')).toBe(true);
   });
+
+  it('rejects a negative price string', async () => {
+    const dto = plainToInstance(ListForResaleDto, { price: '-100' });
+    const errors = await validate(dto);
+    expect(errors.some((e) => e.property === 'price')).toBe(true);
+  });
+
+  it('rejects an empty price string', async () => {
+    const dto = plainToInstance(ListForResaleDto, { price: '' });
+    const errors = await validate(dto);
+    expect(errors.some((e) => e.property === 'price')).toBe(true);
+  });
 });

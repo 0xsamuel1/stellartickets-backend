@@ -26,6 +26,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
 import { TracingShutdownService } from './tracing';
 import { BigIntSerializerInterceptor } from './common/interceptors/bigint-serializer.interceptor';
 import { RequestTimeoutInterceptor } from './common/interceptors/request-timeout.interceptor';
+import { RequestLoggingInterceptor } from './common/interceptors/request-logging.interceptor';
 
 @Module({
   imports: [
@@ -63,6 +64,7 @@ import { RequestTimeoutInterceptor } from './common/interceptors/request-timeout
       provide: APP_INTERCEPTOR,
       useClass: RequestTimeoutInterceptor,
     },
+    { provide: APP_INTERCEPTOR, useClass: RequestLoggingInterceptor },
   ],
 })
 export class AppModule {}
