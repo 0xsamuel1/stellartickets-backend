@@ -21,6 +21,7 @@ describe('EventsService', () => {
       findUniqueOrThrow: jest.Mock;
       findMany: jest.Mock;
       count: jest.Mock;
+      groupBy: jest.Mock;
     };
     ticket: { count: jest.Mock };
     ticketType: { count: jest.Mock; createMany: jest.Mock };
@@ -49,6 +50,7 @@ describe('EventsService', () => {
         findUniqueOrThrow: jest.fn(),
         findMany: jest.fn(),
         count: jest.fn().mockResolvedValue(0),
+        groupBy: jest.fn(),
       },
       ticket: { count: jest.fn() },
       ticketType: {
@@ -338,7 +340,11 @@ describe('EventsService', () => {
         organization: createOrganization({ stellarAccount: 'GORG' }),
       });
       prisma.event.update.mockResolvedValue(
-        createEvent({ id: 'event-1', status: 'PUBLISHED' }),
+        createEvent({
+          id: 'event-1',
+          status: 'PUBLISHED',
+          publishedTxHash: '0xabc',
+        }),
       );
 
       const event = await service.confirmPublish(
@@ -356,6 +362,8 @@ describe('EventsService', () => {
         data: { status: 'PUBLISHED', publishedTxHash: '0xabc' },
       });
       expect(event.status).toBe('PUBLISHED');
+      // #430 — the publish transaction hash is returned on the event.
+      expect(event.publishedTxHash).toBe('0xabc');
     });
 
     it('fails the request when the on-chain event cannot be confirmed after submission', async () => {
@@ -513,6 +521,46 @@ describe('EventsService', () => {
         service.unpublish('organizer-1', 'event-1'),
       ).rejects.toMatchObject({ status: 409 });
       expect(prisma.event.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('summarizeForOrganization', () => {
+    it('requires membership before counting events', async () => {
+      organizations.assertMember.mockRejectedValue(new Error('not a member'));
+
+      await expect(
+        service.summarizeForOrganization('outsider-1', 'org-1'),
+      ).rejects.toThrow('not a member');
+      expect(prisma.event.groupBy).not.toHaveBeenCalled();
+    });
+
+    it('returns a count for every status, zero where there are no events', async () => {
+      prisma.event.groupBy.mockResolvedValue([
+        { status: 'DRAFT', _count: { _all: 3 } },
+        { status: 'PUBLISHED', _count: { _all: 1 } },
+      ]);
+
+      const summary = await service.summarizeForOrganization(
+        'organizer-1',
+        'org-1',
+      );
+
+      expect(summary).toEqual({
+        total: 4,
+        byStatus: { DRAFT: 3, PUBLISHED: 1, CANCELLED: 0 },
+      });
+    });
+
+    it('excludes soft-deleted events from the counts', async () => {
+      prisma.event.groupBy.mockResolvedValue([]);
+
+      await service.summarizeForOrganization('organizer-1', 'org-1');
+
+      expect(prisma.event.groupBy).toHaveBeenCalledWith({
+        by: ['status'],
+        where: { organizationId: 'org-1', deletedAt: null },
+        _count: { _all: true },
+      });
     });
   });
 

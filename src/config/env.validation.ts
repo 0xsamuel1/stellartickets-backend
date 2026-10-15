@@ -172,8 +172,9 @@ class EnvironmentVariables {
   @IsString()
   TICKETING_CONTRACT_ID!: string;
 
-  /// Platform signer used for contract calls submitted on behalf of the
-  /// backend itself (e.g. relaying an organizer's already-authorized op).
+  /// Platform hot wallet used only as a disposable source account for
+  /// read-only contract simulations (verify_ticket, get_event). It signs
+  /// nothing and is never used for a write. See docs/NON_CUSTODIAL.md.
   @IsString()
   PLATFORM_SIGNER_SECRET!: string;
 

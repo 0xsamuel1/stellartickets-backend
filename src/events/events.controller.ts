@@ -60,6 +60,18 @@ export class EventsController {
     );
   }
 
+  @Get('organizations/:organizationId/events/summary')
+  @UseGuards(JwtAuthGuard)
+  summarizeForOrganization(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('organizationId') organizationId: string,
+  ) {
+    return this.eventsService.summarizeForOrganization(
+      user.userId,
+      organizationId,
+    );
+  }
+
   @Post('organizations/:organizationId/events')
   @UseGuards(JwtAuthGuard)
   create(

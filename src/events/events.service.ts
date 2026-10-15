@@ -326,6 +326,28 @@ export class EventsService {
     return { items, total, page, limit };
   }
 
+  /** Event counts per status for one organization, for `GET .../events/summary`. */
+  async summarizeForOrganization(userId: string, organizationId: string) {
+    await this.organizations.assertMember(organizationId, userId);
+    // #207 — soft-deleted events are excluded from the summary too.
+    const groups = await this.prisma.event.groupBy({
+      by: ['status'],
+      where: { organizationId, deletedAt: null },
+      _count: { _all: true },
+    });
+
+    // Every status is present, even at zero, so the response shape is stable.
+    const byStatus = Object.fromEntries(
+      Object.values(EventStatus).map((status) => [status, 0]),
+    ) as Record<EventStatus, number>;
+    for (const group of groups) {
+      byStatus[group.status] = group._count._all;
+    }
+    const total = Object.values(byStatus).reduce((sum, n) => sum + n, 0);
+
+    return { total, byStatus };
+  }
+
   /** Picks a random u64 (well within Postgres's signed-bigint range) and reserves it on the event row. */
   private async reserveChainEventId(eventId: string): Promise<bigint> {
     for (let attempt = 0; attempt < 5; attempt++) {

@@ -115,7 +115,7 @@ issued.
 | `SOROBAN_RPC_URL` | string | **required** | — | yes | Soroban RPC endpoint the StellarService submits contract calls through.
 | `STELLAR_NETWORK` | — | **required** | `testnet` | yes | Which Stellar network every contract call targets. Must match the network the `ticketing` contract is deployed on and the one user wallets are set
 | `TICKETING_CONTRACT_ID` | string | **required** | — | yes | Deployed `ticketing` contract's C... address.
-| `PLATFORM_SIGNER_SECRET` | string | **required** | — | yes | Platform signer used for contract calls submitted on behalf of the backend itself (e.g. relaying an organizer's already-authorized op).
+| `PLATFORM_SIGNER_SECRET` | string | **required** | — | yes | Platform hot wallet used only as a disposable source account for read-only contract simulations (verify_ticket, get_event). It signs nothing and is never used for a write. See docs/NON_CUSTODIAL.md.
 | `OFFLINE_SIGNING_KEY_ID` | string | **required** | `2026-01` | yes | Key id of the Ed25519 key currently used to sign offline verification tokens. Must have a matching entry in OFFLINE_SIGNING_PUBLIC_KEYS.
 | `OFFLINE_SIGNING_PRIVATE_KEY` | string | **required** | — | yes | PEM-encoded Ed25519 private key used to sign offline verification tokens. See docs/OFFLINE_VERIFICATION.md for generation and rotation.
 | `OFFLINE_SIGNING_PUBLIC_KEYS` | string | **required** | — | yes | JSON map of key id -> PEM-encoded Ed25519 public key. Every key a scanner should still accept, current and retired, so tokens signed before a rotation keep verifying until they expire.

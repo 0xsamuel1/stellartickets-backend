@@ -1,0 +1,13 @@
+meta {
+  name: Summarize For Organization
+  type: http
+}
+
+get {
+  url: {{baseUrl}}/v1/organizations/{{organizationId}}/events/summary
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}

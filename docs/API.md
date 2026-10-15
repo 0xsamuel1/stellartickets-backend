@@ -496,6 +496,22 @@ curl -s "$API/v1/organizations/2c7e4a10-5b6d-4f8e-9a1b-3c4d5e6f7a8b/events?statu
 }
 ```
 
+### `GET /v1/organizations/:organizationId/events/summary`
+
+Members only. Counts of the organization's events per status, soft-deleted events excluded. Every status is returned, including zeros.
+
+```bash
+curl -s "$API/v1/organizations/2c7e4a10-5b6d-4f8e-9a1b-3c4d5e6f7a8b/events/summary" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+```json
+{
+  "total": 4,
+  "byStatus": { "DRAFT": 3, "PUBLISHED": 1, "CANCELLED": 0 }
+}
+```
+
 ### `POST /v1/organizations/:organizationId/events`
 
 Members only. Creates a `DRAFT` event.

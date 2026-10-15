@@ -21,6 +21,7 @@ describe('EventsController', () => {
     findPublished: jest.fn(),
     getWithOrg: jest.fn(),
     findForOrganization: jest.fn(),
+    summarizeForOrganization: jest.fn(),
     create: jest.fn(),
     addTicketType: jest.fn(),
     buildPublishTx: jest.fn(),
@@ -97,6 +98,37 @@ describe('EventsController', () => {
       ['post', '/events/e1/restore'],
     ] as const)('rejects unauthenticated %s %s', async (method, url) => {
       await http()[method](url).expect(401);
+    });
+
+    describe('GET /organizations/:organizationId/events/summary', () => {
+      it('returns the per-status counts for the organization', async () => {
+        const summary = {
+          total: 4,
+          byStatus: { DRAFT: 3, PUBLISHED: 1, CANCELLED: 0 },
+        };
+        service.summarizeForOrganization.mockResolvedValue(summary);
+
+        const res = await http()
+          .get('/organizations/o1/events/summary')
+          .set(AUTH)
+          .expect(200);
+
+        expect(res.body).toEqual(summary);
+        expect(service.summarizeForOrganization).toHaveBeenCalledWith(
+          TEST_USER.userId,
+          'o1',
+        );
+      });
+
+      it('propagates forbidden for non-members', async () => {
+        service.summarizeForOrganization.mockRejectedValue(
+          new ForbiddenException(),
+        );
+        await http()
+          .get('/organizations/o1/events/summary')
+          .set(AUTH)
+          .expect(403);
+      });
     });
 
     describe('GET /organizations/:organizationId/events', () => {
