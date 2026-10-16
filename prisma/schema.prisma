@@ -130,6 +130,7 @@ model OrganizationMember {
   createdAt      DateTime      @default(now())
 
   @@unique([organizationId, userId])
+  @@index([userId])
 }
 
 model Event {
@@ -158,6 +159,8 @@ model Event {
   deletedAt              DateTime?
   createdAt              DateTime        @default(now())
   updatedAt              DateTime        @updatedAt
+
+  @@index([organizationId])
 }
 
 model TicketType {
@@ -177,6 +180,7 @@ model TicketType {
   createdAt      DateTime @default(now())
 
   @@unique([eventId, name])
+  @@index([eventId])
 }
 
 model Ticket {
@@ -211,6 +215,8 @@ model Ticket {
 
   // #213 — covers GET /tickets/mine (owner + optional status filter).
   @@index([ownerId, status])
+  @@index([eventId])
+  @@index([ticketTypeId])
   // #211 — seat uniqueness for assigned seats is enforced by a partial
   // unique index in a raw migration (see prisma/migrations/*_ticket_seat_partial_unique/migration.sql):
   // CREATE UNIQUE INDEX "Ticket_eventId_seat_key" ON "Ticket"("eventId", "seat")
@@ -234,6 +240,9 @@ model ResaleListing {
 
   // #214 — resale lookups filter by ticket and status.
   @@index([ticketId, status])
+  @@index([sellerId])
+  // #394 — marketplace feeds filter by status and sort by creation time.
+  @@index([status, createdAt])
 }
 
 model ResalePriceHistory {
