@@ -5,10 +5,19 @@ import type { PrismaService } from '../prisma/prisma.service';
 
 describe('UsersService', () => {
   let service: UsersService;
-  let prisma: { user: { findUnique: jest.Mock; update: jest.Mock } };
+  let prisma: {
+    user: { findUnique: jest.Mock; update: jest.Mock };
+    ticket: { count: jest.Mock };
+    resaleListing: { count: jest.Mock };
+  };
 
   beforeEach(() => {
-    prisma = { user: { findUnique: jest.fn(), update: jest.fn() } };
+    prisma = {
+      user: { findUnique: jest.fn(), update: jest.fn() },
+      ticket: { count: jest.fn().mockResolvedValue(0) },
+      resaleListing: { count: jest.fn().mockResolvedValue(0) },
+    };
+    prisma.user.findUnique.mockResolvedValue({ stellarPublicKey: null });
     service = new UsersService(prisma as unknown as PrismaService);
   });
 
@@ -33,6 +42,29 @@ describe('UsersService', () => {
   });
 
   describe('connectWallet', () => {
+    it('rejects changing wallets while the user owns tickets', async () => {
+      prisma.user.findUnique.mockResolvedValue({ stellarPublicKey: 'GOLD' });
+      prisma.ticket.count.mockResolvedValue(1);
+
+      await expect(
+        service.connectWallet('user-1', 'GNEW'),
+      ).rejects.toMatchObject({ status: 409 });
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('allows connecting or changing wallets when no assets are held', async () => {
+      prisma.user.findUnique.mockResolvedValue({ stellarPublicKey: null });
+      prisma.user.update.mockResolvedValue({
+        id: 'user-1',
+        stellarPublicKey: 'GNEW',
+      });
+
+      await expect(service.connectWallet('user-1', 'GNEW')).resolves.toEqual({
+        id: 'user-1',
+        stellarPublicKey: 'GNEW',
+      });
+    });
+
     it('rejects a wallet already connected to another account', async () => {
       prisma.user.update.mockRejectedValue(
         new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
