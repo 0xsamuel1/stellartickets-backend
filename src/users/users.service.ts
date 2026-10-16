@@ -30,6 +30,30 @@ export class UsersService {
 
   async connectWallet(userId: string, stellarPublicKey: string) {
     try {
+      const [user, ticketCount, activeListingCount] = await Promise.all([
+        this.prisma.user.findUnique({
+          where: { id: userId },
+          select: { stellarPublicKey: true },
+        }),
+        this.prisma.ticket.count({ where: { ownerId: userId } }),
+        this.prisma.resaleListing.count({
+          where: { sellerId: userId, status: 'ACTIVE' },
+        }),
+      ]);
+
+      if (!user) {
+        throw new NotFoundException('User not found');
+      }
+      if (
+        user.stellarPublicKey &&
+        user.stellarPublicKey !== stellarPublicKey &&
+        (ticketCount > 0 || activeListingCount > 0)
+      ) {
+        throw new ConflictException(
+          'You cannot change your wallet while holding tickets or active listings',
+        );
+      }
+
       return await this.prisma.user.update({
         where: { id: userId },
         data: { stellarPublicKey },
@@ -52,7 +76,7 @@ export class UsersService {
   async lookupByEmail(email: string) {
     const user = await this.prisma.user.findUnique({
       where: { email },
-      select: { id: true, name: true, email: true, stellarPublicKey: true },
+      select: { id: true, name: true },
     });
     if (!user) {
       throw new NotFoundException('No account found with that email');
